@@ -639,6 +639,7 @@ export class AttachmentUploadHandler extends UploadHandler {
   }
 }
 
+// This code is here if you need to migrate the DO to a new instance, and still have a backup for old process
 // export class BackupUploadHandler extends UploadHandler {
 //   constructor(state: DurableObjectState, env: Bindings) {
 //     super(state, env, env.BACKUP_BUCKET)
