@@ -2,6 +2,8 @@
 
 tus-server provides an implementation of the [TUS protocol](https://tus.io) for resumable uploads built on [cloudflare workers](https://www.cloudflare.com/products/workers/) and [R2](https://www.cloudflare.com/products/r2/). 
 
+![Demo TUS](files/demo_tus.png)
+
 # Building
 You'll need [Node.js](https://nodejs.org/).
 
