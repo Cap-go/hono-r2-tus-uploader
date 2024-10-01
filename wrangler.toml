@@ -1,0 +1,30 @@
+name = "hono-r2-tus-uploader"
+compatibility_date = "2024-09-23"
+main = "./index.ts"
+compatibility_flags = [ "nodejs_compat_v2" ]
+
+durable_objects.bindings = [ { name = "ATTACHMENT_UPLOAD_HANDLER", class_name = "AttachmentUploadHandler" } ]
+
+r2_buckets = [ { binding = "ATTACHMENT_BUCKET", bucket_name = "attachments", preview_bucket_name = "attachments" } ]
+
+[[migrations]]
+tag = "v1"
+new_classes = [ "UploadHandler" ]
+
+[[migrations]]
+tag = "v2"
+renamed_classes = [ { from = "UploadHandler", to = "AttachmentUploadHandler" } ]
+# new_classes = ["BackupUploadHandler"] // TOOD: to use if we change the DO
+
+[placement]
+mode = "smart"
+
+[observability]
+enabled = true
+
+[dev]
+port = 8081
+
+[vars]
+# This is used in the demo to authenticate the requests
+AUTH_TOKEN = "Basic dGVzdDp0ZXN0"

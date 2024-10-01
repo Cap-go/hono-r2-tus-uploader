@@ -22,12 +22,17 @@ To run a dev server you can interact with over localhost
 wrangler dev
 ```
 
-To run unit tests,
+To run demo,
 ```
-npm test
+bun run
 ```
 
 # Deploying
+
+## Make the code yours
+
+Change the auth system, to implement your own current one works with a shared secret, that is used in tus-server and tus-resumable-upload-js
+
 
 ## One time setup
 1. Create an R2 bucket and update the binding in `wrangler.toml`
