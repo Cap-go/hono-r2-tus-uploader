@@ -19,26 +19,27 @@ In order to deploy to cloudflare or use non-local dev mode, use the [`wrangler`]
 The server work without authentification, but a empty middleware is provided to help you set it up.
 
 
-To run a dev server you can interact with over localhost
+To run a dev server you can interact with over localhost with local wrangler
 ```
-wrangler dev
+bun run start:server
 ```
 
-To run demo,
+Open another shell and run: 
 ```
-bun run
+bun run start:demo
 ```
 
 # Deploying
 
-## Make the code yours
+## Notes
 
 Change the auth system, to implement your own current one works with a shared secret, that is used in tus-server and tus-resumable-upload-js
 
 
 ## One time setup
 1. Create an R2 bucket and update the binding in `wrangler.toml`
-2. Add a base64 encoded shared auth secret with `wrangler secret put SHARED_AUTH_SECRET`
+2. Change the auth system to your needs
+3. Deploy with wrangler
 
 ```
 wrangler deploy -e <staging|production>
