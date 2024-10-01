@@ -9,11 +9,10 @@ r2_buckets = [ { binding = "ATTACHMENT_BUCKET", bucket_name = "attachments", pre
 
 [[migrations]]
 tag = "v1"
-new_classes = [ "UploadHandler" ]
+new_classes = [ "AttachmentUploadHandler" ]
 
-[[migrations]]
-tag = "v2"
-renamed_classes = [ { from = "UploadHandler", to = "AttachmentUploadHandler" } ]
+# [[migrations]]
+# tag = "v2"
 # new_classes = ["BackupUploadHandler"] // TOOD: to use if we change the DO
 
 [placement]
