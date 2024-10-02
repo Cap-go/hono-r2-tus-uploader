@@ -5,7 +5,7 @@ tus-server provides an implementation of the [TUS protocol](https://tus.io) for 
 ![Demo TUS](files/demo_tus.png)
 
 # Building
-You'll need [Node.js](https://nodejs.org/).
+You'll need [Bun.sh]([https://nodejs.org/](https://bun.sh/)). ( The code is in TS, it remove the need to transpile)
 
 To install dependencies,
 ```
@@ -42,7 +42,7 @@ Change the auth system, to implement your own current one works with a shared se
 3. Deploy with wrangler
 
 ```
-wrangler deploy -e <staging|production>
+bunx wrangler deploy -e <staging|production>
 ```
 
 # License
