@@ -55,5 +55,5 @@ Licensed under the [AGPLv3](LICENSE)
 
 This is a hard fork of https://github.com/signalapp/tus-server/blob/main/README.md
 
-Rewrited to work in the Capgo tech stack, and in frontend
+Rewrited to work in the [Capgo (live update for CapacitorJS apps)](https://capgo.app) tech stack, and in frontend
 
