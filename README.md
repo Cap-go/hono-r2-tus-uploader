@@ -5,7 +5,7 @@ tus-server provides an implementation of the [TUS protocol](https://tus.io) for 
 ![Demo TUS](files/demo_tus.png)
 
 # Building
-You'll need [Bun.sh]([https://nodejs.org/](https://bun.sh/)). ( The code is in TS, it remove the need to transpile)
+You'll need [Bun.sh]([https://nodejs.org/](https://bun.sh/)). (The code is in TS, it remove the need to transpile, You can use Nodejs with --experimental-strip-types and npm)
 
 To install dependencies,
 ```
