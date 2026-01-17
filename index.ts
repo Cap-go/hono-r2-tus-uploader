@@ -19,6 +19,7 @@ app.options(`/files/${ATTACHMENT_PREFIX}`, optionsHandler)
 app.post(`/files/${ATTACHMENT_PREFIX}`, setKeyFromMetadata, uploadHandler)
 
 app.options(`/files/${ATTACHMENT_PREFIX}/:id{.+}`, optionsHandler)
+app.on('HEAD', `/files/${ATTACHMENT_PREFIX}/:id{.+}`, setKeyFromIdParam, uploadHandler)
 app.get(`/files/${ATTACHMENT_PREFIX}/:id{.+}`, setKeyFromIdParam, getHandler)
 app.patch(`/files/${ATTACHMENT_PREFIX}/:id{.+}`, setKeyFromIdParam, uploadHandler)
 
