@@ -71,6 +71,9 @@ web_modules/
 
 .npm
 
+# Lock files (project uses Bun, not npm)
+package-lock.json
+
 # Optional eslint cache
 
 .eslintcache
