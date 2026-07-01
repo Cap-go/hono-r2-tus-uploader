@@ -13,6 +13,10 @@ jobs:
         with:
           node-version: 24.x
       - uses: actions/checkout@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Test
+        run: bun install && bun test
       - name: Build & Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
