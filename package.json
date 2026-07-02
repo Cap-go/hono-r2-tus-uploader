@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start:demo": "bun run demo/server.ts",
-    "start:server": "bunx wrangler dev"
+    "start:server": "bunx wrangler dev",
+    "test": "bun test"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240925.0",

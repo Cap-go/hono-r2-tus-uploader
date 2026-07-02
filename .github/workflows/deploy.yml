@@ -4,7 +4,19 @@ on:
   pull_request:
   repository_dispatch:
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Test
+        run: bun install && bun test
+
   deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -13,6 +25,10 @@ jobs:
         with:
           node-version: 24.x
       - uses: actions/checkout@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Install
+        run: bun install
       - name: Build & Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:

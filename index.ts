@@ -44,6 +44,11 @@ function validateRequestId(requestId: string) {
 }
 
 async function getHandler(c: Context): Promise<Response> {
+  // Hono/tiny routes HEAD requests through GET handlers; TUS resume uses HEAD for Upload-Offset.
+  if (c.req.method === 'HEAD') {
+    return uploadHandler(c)
+  }
+
   const requestId = c.get('fileId')
   // TODO: check if the user is authorized to access this file for the demo purpose it's disabled
   // try {
