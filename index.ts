@@ -2,12 +2,11 @@
 import { Hono } from 'hono/tiny'
 import type { Context, Next } from 'hono'
 import { parseUploadMetadata } from './tus/parse.ts'
+import { buildForwardUploadUrl, fetchUploadHandlerWithRetry } from './tus/doForward.ts'
 import { DEFAULT_RETRY_PARAMS, RetryBucket } from './tus/retry.ts'
 import { MAX_UPLOAD_LENGTH_BYTES, TUS_VERSION, X_CHECKSUM_SHA256 } from './tus/uploadHandler.ts'
-import { ALLOWED_HEADERS, ALLOWED_METHODS, EXPOSED_HEADERS, toBase64 } from './tus/util.ts'
+import { ALLOWED_HEADERS, ALLOWED_METHODS, EXPOSED_HEADERS, isSafeAttachmentKey, toBase64 } from './tus/util.ts'
 import type { R2Bucket, R2Object, R2Range, DurableObjectNamespace } from '@cloudflare/workers-types'
-
-const DO_CALL_TIMEOUT = 1000 * 60 * 30 // 20 minutes
 
 const ATTACHMENT_PREFIX = 'attachments'
 
@@ -36,9 +35,8 @@ async function checkAppAccess(c: Context) {
 }
 
 function validateRequestId(requestId: string) {
-    // here you should check is the path is conform as you expoect for the user and catch path traversal
-  if (requestId.includes('..')) {
-    throw new Error('Path traversal detected');
+  if (!isSafeAttachmentKey(requestId)) {
+    throw new Error('Invalid file path')
   }
   return true
 }
@@ -163,13 +161,26 @@ async function uploadHandler(c: Context): Promise<Response> {
 
   const handler = durableObjNs.get(durableObjNs.idFromName(requestId))
   console.log('can handler')
-  // @ts-expect-error-next-line
-  return await handler.fetch(c.req.url, {
-    body: c.req.raw.body as any,
+
+  const requestUrl = new URL(c.req.url)
+  const forwardUrl = buildForwardUploadUrl(requestUrl, c.req.method, ATTACHMENT_PREFIX, requestId)
+  if (forwardUrl == null) {
+    return c.json({ error: 'Invalid file path' }, 400)
+  }
+
+  const headers = new Headers(c.req.raw.headers)
+  const requestInit: RequestInit & { duplex?: 'half' } = {
     method: c.req.method,
-    headers: c.req.raw.headers as any ,
-    signal: AbortSignal.timeout(DO_CALL_TIMEOUT) as any,
-  })
+    headers,
+  }
+  const uploadBody = c.req.method === 'HEAD' ? null : c.req.raw.body
+  if (uploadBody != null) {
+    requestInit.body = uploadBody as any
+    requestInit.duplex = 'half'
+  }
+
+  const request = new Request(forwardUrl, requestInit)
+  return await fetchUploadHandlerWithRetry(handler, request)
 }
 
 async function setKeyFromMetadata(c: Context, next: Next) {
