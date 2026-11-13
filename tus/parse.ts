@@ -9,6 +9,8 @@ export interface UploadMetadata {
   filetype?: string
 }
 
+const MEDIA_TYPE_RE = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/
+
 // Parse "Upload-Metadata" header as described in the TUS creation extension
 // https://tus.io/protocols/resumable-upload#upload-metadata
 export function parseUploadMetadata(headers: Headers): UploadMetadata {
@@ -39,7 +41,10 @@ export function parseUploadMetadata(headers: Headers): UploadMetadata {
       ret.filename = new TextDecoder().decode(valueBytes)
     }
     else if (key === 'filetype') {
-      ret.filetype = new TextDecoder().decode(valueBytes)
+      const filetype = new TextDecoder().decode(valueBytes).split(';')[0].trim().toLowerCase()
+      if (MEDIA_TYPE_RE.test(filetype)) {
+        ret.filetype = filetype
+      }
     }
   }
   return ret

@@ -97,6 +97,8 @@ function objectHeaders(object: R2Object): Headers {
   const headers = new Headers()
   object.writeHttpMetadata(headers as any)
   headers.set('etag', object.httpEtag)
+  headers.set('x-content-type-options', 'nosniff')
+  headers.set('content-security-policy', 'sandbox')
 
   // the sha256 checksum was provided to R2 in the upload
   if (object.checksums.sha256 != null) {
