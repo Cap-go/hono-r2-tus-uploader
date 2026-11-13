@@ -1,4 +1,4 @@
-import type { R2Bucket, R2UploadedPart, R2MultipartUpload } from '@cloudflare/workers-types'
+import type { Blob, R2Bucket, R2HTTPMetadata, R2MultipartUpload, R2UploadedPart } from '@cloudflare/workers-types'
 
 // Retries with backoff of [100ms, 200ms, 400ms, 800ms, 1600ms]
 export const DEFAULT_RETRY_PARAMS = { maxRetries: 5, durationMillis: 100 }
@@ -51,7 +51,7 @@ export function isR2MultipartDoesNotExistError(error: unknown): boolean {
 function isR2Error(error: unknown, predicate: (msg: string) => boolean): boolean {
   // R2 bindings currently has no structured errors :( . We need to check for expected errors
   // by searching error messages. These usually contain a numeric error code, but not always
-  if (error != null && error instanceof Object && Object.prototype.hasOwnProperty.call(error, 'message')) {
+  if (error != null && error instanceof Object && Object.hasOwn(error, 'message')) {
     const msg: string = (error as { message: string }).message
     return predicate(msg.toLowerCase())
   }
@@ -85,10 +85,10 @@ export class RetryBucket {
     key: string,
     value: (ArrayBuffer | ArrayBufferView) | string | Blob,
     checksum?: string | ArrayBuffer,
+    httpMetadata?: R2HTTPMetadata,
   ): ReturnType<R2Bucket['put']> {
     return retry(
-      // @ts-expect-error: Blob is not assignable to string | ArrayBuffer | ArrayBufferView
-      () => this.bucket.put(key, value, { sha256: checksum }),
+      () => this.bucket.put(key, value as any, { sha256: checksum, httpMetadata }),
       {
         params: this.params,
         shouldRetry: error => !isR2ChecksumError(error),
@@ -116,8 +116,7 @@ export class RetryMultipartUpload {
 
   // don't allow streaming writes so the operation can be safely retried
   async uploadPart(partNumber: number, value: (ArrayBuffer | ArrayBufferView) | string | Blob): Promise<R2UploadedPart> {
-    // @ts-expect-error: Blob is not assignable to string | ArrayBuffer | ArrayBufferView
-    return retry(() => this.r2MultipartUpload.uploadPart(partNumber, value), this.retryOptions())
+    return retry(() => this.r2MultipartUpload.uploadPart(partNumber, value as any), this.retryOptions())
   }
 
   async abort(): ReturnType<R2MultipartUpload['abort']> {

@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { HTTPException } from 'hono/http-exception'
-import { X_CHECKSUM_SHA256 } from './uploadHandler.ts'
-import { fromBase64 } from './util.ts'
+import { fromBase64, X_CHECKSUM_SHA256 } from './util.ts'
 
 export interface UploadMetadata {
   filename?: string
+  filetype?: string
 }
+
+const MEDIA_TYPE_RE = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/
 
 // Parse "Upload-Metadata" header as described in the TUS creation extension
 // https://tus.io/protocols/resumable-upload#upload-metadata
@@ -37,6 +39,12 @@ export function parseUploadMetadata(headers: Headers): UploadMetadata {
 
     if (key === 'filename') {
       ret.filename = new TextDecoder().decode(valueBytes)
+    }
+    else if (key === 'filetype') {
+      const filetype = new TextDecoder().decode(valueBytes).split(';')[0].trim().toLowerCase()
+      if (MEDIA_TYPE_RE.test(filetype)) {
+        ret.filetype = filetype
+      }
     }
   }
   return ret

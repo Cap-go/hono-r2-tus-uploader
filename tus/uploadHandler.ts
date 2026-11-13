@@ -13,18 +13,27 @@ import {
   isR2MultipartDoesNotExistError,
   RetryBucket,
 } from './retry.ts'
-import { ALLOWED_HEADERS, ALLOWED_METHODS, AsyncLock, EXPOSED_HEADERS, generateParts, readIntFromHeader, toBase64, WritableStreamBuffer } from './util.ts'
-import type { Digester } from './digest.ts'
-import type {
-  RetryMultipartUpload,
-} from './retry.ts'
+import {
+  ALLOWED_HEADERS,
+  ALLOWED_METHODS,
+  AsyncLock,
+  buildFileHttpMetadata,
+  encodeR2KeyForUploadLocation,
+  EXPOSED_HEADERS,
+  generateParts,
+  isRetryableDurableObjectResetError,
+  MAX_UPLOAD_LENGTH_BYTES,
+  readIntFromHeader,
+  toBase64,
+  TUS_VERSION,
+  UPLOAD_INFO_KEY,
+  UPLOAD_OFFSET_KEY,
+  WritableStreamBuffer,
+  X_CHECKSUM_SHA256,
+  X_UPLOAD_HANDLER_RETRYABLE,
+} from './util.ts'
 
-export const TUS_VERSION = '1.0.0'
-
-// uploads larger than this will be rejected
-export const MAX_UPLOAD_LENGTH_BYTES = 1024 * 1024 * 100
-
-export const X_CHECKSUM_SHA256 = 'X-Checksum-Sha256'
+export { MAX_UPLOAD_LENGTH_BYTES, TUS_VERSION, X_CHECKSUM_SHA256 } from './util.ts'
 
 // how long an unfinished upload lives in ms
 const UPLOAD_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000
@@ -33,11 +42,11 @@ const UPLOAD_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000
 // https://developers.cloudflare.com/r2/objects/multipart-objects/#limitations
 const BUFFER_SIZE = 1024 * 1024 * 5
 
-// how much of the upload we've written
-const UPLOAD_OFFSET_KEY = 'upload-offset'
+const TUS_UPLOAD_CONTENT_TYPE = 'application/offset+octet-stream'
 
-// key for StoredUploadInfo
-const UPLOAD_INFO_KEY = 'upload-info'
+function normalizeContentType(contentType: string | null | undefined): string | null {
+  return contentType?.split(';', 1)[0]?.trim().toLowerCase() || null
+}
 
 // Stored for each part with the key of the multipart part number. Part numbers start with 1
 interface StoredR2Part {
@@ -52,6 +61,12 @@ interface StoredUploadInfo {
   uploadLength?: number
   checksum?: Uint8Array
   multipartUploadId?: string
+  contentType?: string
+  r2Key?: string
+}
+
+function isUploadKeyMismatch(uploadInfo: StoredUploadInfo | undefined, r2Key: string): boolean {
+  return uploadInfo?.r2Key != null && uploadInfo.r2Key !== r2Key
 }
 
 // UploadHandlers represent an in-progress resumable upload to cloudflare R2.
@@ -116,6 +131,13 @@ export class UploadHandler {
     this.router.all('*', c => c.notFound())
     this.router.onError((e, c) => {
       console.log('in DO', 'onError', e)
+      if (isRetryableDurableObjectResetError(e)) {
+        const response = c.text('Upload handler temporarily unavailable', 503)
+        response.headers.set(X_UPLOAD_HANDLER_RETRYABLE, '1')
+        response.headers.set('Retry-After', '1')
+        response.headers.set('Tus-Resumable', TUS_VERSION)
+        return response
+      }
       if (e instanceof HTTPException) {
         return e.getResponse()
       }
@@ -180,7 +202,7 @@ export class UploadHandler {
     }
 
     const contentType = c.req.header('Content-Type')
-    if (contentType != null && contentType !== 'application/offset+octet-stream') {
+    if (contentType != null && normalizeContentType(contentType) !== TUS_UPLOAD_CONTENT_TYPE) {
       console.log('in DO', 'upload_bundle', 'create only supports application/offset+octet-stream content-type')
       return c.text('create only supports application/offset+octet-stream content-type', 415)
     }
@@ -202,7 +224,7 @@ export class UploadHandler {
       return c.text('bad Upload-Defer-Length', 400)
     }
 
-    const uploadInfo: StoredUploadInfo = {}
+    const uploadInfo: StoredUploadInfo = { r2Key }
 
     const expiration = new Date(Date.now() + UPLOAD_EXPIRATION_MS)
     await this.state.storage.setAlarm(expiration)
@@ -212,10 +234,13 @@ export class UploadHandler {
     if (checksum != null) {
       uploadInfo.checksum = checksum
     }
+    if (uploadMetadata.filetype) {
+      uploadInfo.contentType = uploadMetadata.filetype
+    }
     await this.state.storage.put(UPLOAD_OFFSET_KEY, 0)
     await this.state.storage.put(UPLOAD_INFO_KEY, uploadInfo)
 
-    const uploadLocation = new URL(r2Key, c.req.url.endsWith('/') ? c.req.url : `${c.req.url}/`)
+    const uploadLocation = new URL(encodeR2KeyForUploadLocation(r2Key), c.req.url.endsWith('/') ? c.req.url : `${c.req.url}/`)
 
     const uploadOffset = hasContent
       ? await this.appendBody(r2Key, c.req.raw.body as ReadableStream<Uint8Array>, 0, uploadInfo)
@@ -253,6 +278,10 @@ export class UploadHandler {
     }
     else {
       const info: StoredUploadInfo | undefined = await this.state.storage.get(UPLOAD_INFO_KEY)
+      if (isUploadKeyMismatch(info, r2Key)) {
+        console.log('in DO', 'upload_bundle', 'head upload key mismatch', r2Key)
+        return c.text('Upload key does not match the created upload', 400)
+      }
       uploadLength = info?.uploadLength
     }
 
@@ -292,6 +321,10 @@ export class UploadHandler {
     const uploadInfo: StoredUploadInfo | undefined = await this.state.storage.get(UPLOAD_INFO_KEY)
     if (uploadInfo == null) {
       throw new UnrecoverableError('existing upload should have had uploadInfo', r2Key)
+    }
+    if (isUploadKeyMismatch(uploadInfo, r2Key)) {
+      console.log('in DO', 'upload_bundle', 'patch upload key mismatch', r2Key)
+      return c.text('Upload key does not match the created upload', 400)
     }
     const headerUploadLength = readIntFromHeader(c.req.raw.headers, 'Upload-Length')
     if (uploadInfo.uploadLength != null && !Number.isNaN(headerUploadLength) && uploadInfo.uploadLength !== headerUploadLength) {
@@ -405,7 +438,7 @@ export class UploadHandler {
           else if (!this.multipart) {
             // all the bytes fit into a single in memory buffer, so we can just upload
             // it directly without using multipart
-            await this.r2Put(r2Key, part.bytes, checksum)
+            await this.r2Put(r2Key, part.bytes, checksum, uploadInfo.contentType)
             uploadOffset += part.bytes.byteLength
             await this.cleanup()
           }
@@ -493,7 +526,7 @@ export class UploadHandler {
     if (this.multipart != null) {
       return this.parts
         .map(p => p.length)
-        .reduce((a, b) => a + b)
+        .reduce((a, b) => a + b, 0)
     }
 
     let partOffset = 0
@@ -523,7 +556,8 @@ export class UploadHandler {
     if (uploadInfo.checksum != null) {
       customMetadata[X_CHECKSUM_SHA256] = toBase64(uploadInfo.checksum)
     }
-    const upload = await this.retryBucket.createMultipartUpload(r2Key, { customMetadata })
+    const httpMetadata = buildFileHttpMetadata(uploadInfo.contentType)
+    const upload = await this.retryBucket.createMultipartUpload(r2Key, { customMetadata, httpMetadata })
     uploadInfo.multipartUploadId = upload.r2MultipartUpload.uploadId
     await this.state.storage.put(UPLOAD_INFO_KEY, uploadInfo)
     return upload
@@ -533,10 +567,11 @@ export class UploadHandler {
     return this.retryBucket.resumeMultipartUpload(r2Key, multipartUploadId)
   }
 
-  async r2Put(r2Key: string, bytes: Uint8Array, checksum?: Uint8Array) {
+  async r2Put(r2Key: string, bytes: Uint8Array, checksum?: Uint8Array, contentType?: string) {
     try {
+      const httpMetadata = buildFileHttpMetadata(contentType)
       // @ts-expect-error-next-line
-      await this.retryBucket.put(r2Key, bytes, checksum)
+      await this.retryBucket.put(r2Key, bytes, checksum, httpMetadata)
     }
     catch (e) {
       if (isR2ChecksumError(e)) {
@@ -558,9 +593,8 @@ export class UploadHandler {
     }
     catch (e) {
       if (isR2MultipartDoesNotExistError(e)) {
-        // The multipart transaction we persisted no longer exists. It either expired, or it's possible we
-        // finished the transaction but failed to update the state afterwords. Either way, we should give up.
-        throw new UnrecoverableError(`multipart upload does not exist ${e}`, r2Key)
+        await this.cleanup(r2Key)
+        throw new HTTPException(409, { message: 'multipart upload expired' })
       }
       throw e
     }

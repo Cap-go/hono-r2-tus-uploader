@@ -31,9 +31,100 @@ export const HEADERS_LOWERCASE = HEADERS.map((header) => {
   return header.toLowerCase()
 }) as Array<Lowercase<(typeof HEADERS)[number]>>
 
+export const TUS_VERSION = '1.0.0'
+
+export const MAX_UPLOAD_LENGTH_BYTES = 1024 * 1024 * 100
+
+export const X_CHECKSUM_SHA256 = 'X-Checksum-Sha256'
+
+export const X_UPLOAD_HANDLER_RETRYABLE = 'X-Capgo-DO-Retryable'
+
+export const NO_TRANSFORM_CACHE_CONTROL = 'no-transform'
+
+export const UPLOAD_OFFSET_KEY = 'upload-offset'
+
+export const UPLOAD_INFO_KEY = 'upload-info'
+
 export const ALLOWED_HEADERS = HEADERS.join(', ')
 export const ALLOWED_METHODS = REQUEST_METHODS.join(', ')
 export const EXPOSED_HEADERS = HEADERS.join(', ')
+
+export function encodeR2KeyForUploadLocation(r2Key: string): string {
+  return r2Key.split('/').map(segment => encodeURIComponent(segment)).join('/')
+}
+
+const ENCODED_DOT_RE = /%2e/gi
+
+function isDotPathSegment(segment: string): boolean {
+  const normalized = segment.replace(ENCODED_DOT_RE, '.')
+  return normalized === '.' || normalized === '..'
+}
+
+export function isSafeAttachmentKey(key: string): boolean {
+  if (!key || key.startsWith('/') || key.includes('\\') || key.includes('\0') || /%(?:2f|5c)/i.test(key))
+    return false
+
+  return key.split('/').every(segment => segment !== '' && !isDotPathSegment(segment))
+}
+
+export function decodeUploadLocationKey(encodedKey: string): string | null {
+  try {
+    return encodedKey.split('/').map(segment => decodeURIComponent(segment)).join('/')
+  }
+  catch {
+    return null
+  }
+}
+
+export function withNoTransformCacheControl(cacheControl: string | null | undefined): string {
+  if (cacheControl == null || cacheControl.trim() === '') {
+    return NO_TRANSFORM_CACHE_CONTROL
+  }
+
+  const directives = cacheControl
+    .split(',')
+    .map(directive => directive.trim().toLowerCase())
+    .filter(Boolean)
+
+  if (directives.includes(NO_TRANSFORM_CACHE_CONTROL)) {
+    return cacheControl
+  }
+
+  return `${cacheControl}, ${NO_TRANSFORM_CACHE_CONTROL}`
+}
+
+export function buildFileHttpMetadata(contentType?: string, cacheControl?: string | null): import('@cloudflare/workers-types').R2HTTPMetadata {
+  return {
+    ...(contentType ? { contentType } : {}),
+    cacheControl: withNoTransformCacheControl(cacheControl),
+  }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (!error || typeof error !== 'object' || !('message' in error)) {
+    return ''
+  }
+
+  const { message } = error as { message?: unknown }
+  return typeof message === 'string' ? message.toLowerCase() : ''
+}
+
+export function isRetryableDurableObjectResetError(error: unknown): boolean {
+  if (error && typeof error === 'object') {
+    const candidate = error as { retryable?: boolean, durableObjectReset?: boolean, overloaded?: boolean }
+    if (candidate.retryable || candidate.durableObjectReset || candidate.overloaded) {
+      return true
+    }
+  }
+
+  const message = getErrorMessage(error)
+  return [
+    'moved to a different machine',
+    'storage operation exceeded timeout',
+    'caused object to be reset',
+    'internal error; reference',
+  ].some(fragment => message.includes(fragment))
+}
 export function readIntFromHeader(headers: Headers, name: string): number {
   const headerString = headers.get(name)
   if (headerString == null) {
