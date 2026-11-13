@@ -70,7 +70,9 @@ async function getHandler(c: Context): Promise<Response> {
   const cacheKey = new Request(new URL(c.req.url), c.req)
   let response = await cache.match(cacheKey)
   if (response != null) {
-    return response
+    const cachedHeaders = new Headers(response.headers)
+    applyDownloadSecurityHeaders(cachedHeaders)
+    return new Response(response.body, { status: response.status, headers: cachedHeaders })
   }
 
   const object = await new RetryBucket(bucket, DEFAULT_RETRY_PARAMS).get(requestId, {
@@ -93,12 +95,16 @@ async function getHandler(c: Context): Promise<Response> {
   }
 }
 
+export function applyDownloadSecurityHeaders(headers: Headers): void {
+  headers.set('x-content-type-options', 'nosniff')
+  headers.set('content-security-policy', 'sandbox')
+}
+
 function objectHeaders(object: R2Object): Headers {
   const headers = new Headers()
   object.writeHttpMetadata(headers as any)
   headers.set('etag', object.httpEtag)
-  headers.set('x-content-type-options', 'nosniff')
-  headers.set('content-security-policy', 'sandbox')
+  applyDownloadSecurityHeaders(headers)
 
   // the sha256 checksum was provided to R2 in the upload
   if (object.checksums.sha256 != null) {
